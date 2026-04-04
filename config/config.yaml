@@ -1,0 +1,70 @@
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  output_dir: "data/outputs"
+  tile_size: 512
+  tile_overlap: 64
+  num_workers: 4
+  image_channels: 3      # set to 4 if using RGBI (near-infrared) imagery
+
+model:
+  segmentation:
+    encoder: "resnet34"
+    encoder_weights: "imagenet"
+    in_channels: 3
+    classes: 1
+    activation: null
+
+  damage_classifier:
+    encoder: "resnet34"
+    encoder_weights: "imagenet"
+    in_channels: 6         # pre + post concatenated
+    classes: 5             # background, no-damage, minor, major, destroyed
+
+training:
+  segmentation:
+    epochs: 50
+    batch_size: 8
+    lr: 0.0001
+    weight_decay: 0.0001
+    scheduler: "cosine"
+    loss: "bce_dice"
+    early_stopping_patience: 10
+    save_best: true
+    checkpoint_dir: "checkpoints/segmentation"
+
+  damage_classifier:
+    epochs: 60
+    batch_size: 4
+    lr: 0.0001
+    weight_decay: 0.0001
+    scheduler: "cosine"
+    loss: "cross_entropy"
+    class_weights: [0.1, 1.0, 2.0, 3.0, 4.0]  # higher weight for severe damage
+    early_stopping_patience: 10
+    save_best: true
+    checkpoint_dir: "checkpoints/damage"
+
+inference:
+  segmentation_threshold: 0.5
+  batch_size: 4
+  merge_strategy: "average"   # how overlapping tile predictions are merged
+
+damage_classes:
+  0: "background"
+  1: "no-damage"
+  2: "minor-damage"
+  3: "major-damage"
+  4: "destroyed"
+
+damage_colors:
+  # BGR for OpenCV compatibility
+  0: [0, 0, 0]          # black - background
+  1: [0, 200, 0]        # green - no damage
+  2: [0, 200, 255]      # yellow - minor damage
+  3: [0, 100, 255]      # orange - major damage
+  4: [0, 0, 220]        # red - destroyed
+
+logging:
+  level: "INFO"
+  log_dir: "logs"
