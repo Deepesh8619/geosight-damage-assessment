@@ -118,9 +118,20 @@ class GeoSightAssessor:
 
         building_prob = result["building_prob_map"]
         damage_map    = result["damage_map"]
+        confidence    = result.get("confidence_map")
+        priority      = result.get("priority_map")
         stats         = result["stats"]
+        disaster_type = result.get("disaster_type", {})
+        spatial       = result.get("spatial_analysis", {})
+        impact        = result.get("impact_report", {})
 
-        logger.info(f"  Assessment complete. Stats: {json.dumps(stats, indent=2)}")
+        logger.info(f"  Assessment complete.")
+        logger.info(f"  Disaster type: {disaster_type.get('type', 'unknown')} "
+                     f"(confidence: {disaster_type.get('confidence', 0):.2%})")
+        logger.info(f"  Severity: {impact.get('severity', {}).get('label', 'N/A')} "
+                     f"({impact.get('severity', {}).get('index', 0)}/100)")
+        logger.info(f"  Est. displaced: {impact.get('population', {}).get('displaced', 0):,}")
+        logger.info(f"  Est. economic loss: ${impact.get('economic', {}).get('loss_usd', 0):,.0f}")
 
         # 3. Save outputs
         output_files = {}
@@ -165,12 +176,26 @@ class GeoSightAssessor:
             create_leaflet_map(gdf, output_path=map_path)
             output_files["leaflet_map"] = map_path
 
-        # 4. Save stats report
+        # Save confidence and priority maps as GeoTIFF
+        if save_geotiff_output and confidence is not None:
+            conf_path = str(Path(output_dir) / f"{event_name}_confidence.tif")
+            save_geotiff((confidence * 255).astype(np.uint8), conf_path, transform, crs)
+            output_files["confidence_geotiff"] = conf_path
+
+        if save_geotiff_output and priority is not None:
+            prio_path = str(Path(output_dir) / f"{event_name}_priority.tif")
+            save_geotiff((priority * 255).astype(np.uint8), prio_path, transform, crs)
+            output_files["priority_geotiff"] = prio_path
+
+        # 4. Save full report
         report = {
-            "event":       event_name,
-            "image_size":  {"width": w, "height": h},
-            "statistics":  stats,
-            "output_files": output_files,
+            "event":            event_name,
+            "image_size":       {"width": w, "height": h},
+            "disaster_type":    disaster_type,
+            "impact_report":    impact,
+            "spatial_analysis": spatial,
+            "statistics":       stats,
+            "output_files":     output_files,
         }
         report_path = str(Path(output_dir) / f"{event_name}_report.json")
         with open(report_path, "w") as f:
@@ -263,25 +288,76 @@ class GeoSightAssessor:
 
     @staticmethod
     def _print_report(report: Dict):
-        """Pretty-print a damage assessment report to the console."""
-        print("\n" + "=" * 60)
-        print(f"  GEOSIGHT DAMAGE ASSESSMENT REPORT")
+        """Pretty-print the full humanitarian damage assessment report."""
+        W = 64
+        print("\n" + "=" * W)
+        print("  GEOSIGHT DAMAGE ASSESSMENT REPORT")
         print(f"  Event: {report['event']}")
-        print("=" * 60)
+        print("=" * W)
 
-        stats = report.get("statistics", {})
-        total = stats.get("total_building_area_m2", 0)
-        print(f"\n  Total building area: {total:,} m²")
-        print(f"\n  Damage breakdown:")
-        for cls_name in ["no-damage", "minor-damage", "major-damage", "destroyed"]:
-            s = stats.get(cls_name, {})
-            print(
-                f"    {cls_name:15s}: "
-                f"{s.get('area_m2', 0):8,.0f} m²  "
-                f"({s.get('pct', 0):5.1f}%)"
-            )
+        # Disaster type
+        dt = report.get("disaster_type", {})
+        print(f"\n  DISASTER TYPE: {dt.get('type', 'unknown').upper()}"
+              f"  (confidence: {dt.get('confidence', 0):.1%})")
 
-        print(f"\n  Output files:")
+        # Impact summary
+        imp = report.get("impact_report", {})
+        sev = imp.get("severity", {})
+        pop = imp.get("population", {})
+        eco = imp.get("economic", {})
+        shlt = imp.get("shelter", {})
+
+        print(f"\n  SEVERITY: {sev.get('label', 'N/A').upper()} "
+              f"({sev.get('index', 0):.0f}/100)")
+
+        print(f"\n  POPULATION IMPACT:")
+        print(f"    Estimated affected:    {pop.get('affected', 0):>8,} people")
+        print(f"    Estimated displaced:   {pop.get('displaced', 0):>8,} people")
+        print(f"    Estimated casualties:  {pop.get('casualties_low', 0):>8,} - "
+              f"{pop.get('casualties_high', 0):,}")
+
+        print(f"\n  ECONOMIC IMPACT:")
+        print(f"    Estimated loss:        ${eco.get('loss_usd', 0):>12,.0f}")
+        print(f"    Reconstruction cost:   ${eco.get('reconstruction_usd', 0):>12,.0f}")
+
+        print(f"\n  SHELTER NEEDS:")
+        print(f"    Emergency shelter:     {shlt.get('needed_m2', 0):>8,.0f} m²")
+        print(f"    Tents needed:          {shlt.get('tents_needed', 0):>8,}")
+
+        # Building damage breakdown
+        bld = imp.get("buildings", {})
+        print(f"\n  BUILDINGS: {bld.get('total', 0):,} total")
+        print(f"    No damage:    {bld.get('no_damage', 0):>6,}")
+        print(f"    Minor damage: {bld.get('minor_damage', 0):>6,}")
+        print(f"    Major damage: {bld.get('major_damage', 0):>6,}")
+        print(f"    Destroyed:    {bld.get('destroyed', 0):>6,}")
+
+        # Spatial analysis
+        spa = report.get("spatial_analysis", {})
+        epi = spa.get("epicentre", {})
+        grad = spa.get("gradient", {})
+        if epi.get("center"):
+            print(f"\n  SPATIAL ANALYSIS:")
+            print(f"    Damage epicentre:      pixel ({epi['center'][1]}, {epi['center'][0]})")
+            print(f"    Damage radius:         {epi.get('radius_m', 0):.0f} m")
+            print(f"    Damage pattern:        {grad.get('pattern', 'N/A')}")
+            print(f"    Dominant direction:     {grad.get('dominant_direction', 'N/A')}")
+            n_clusters = len(spa.get("clusters", []))
+            print(f"    Damage clusters:       {n_clusters}")
+
+        # Response protocol
+        proto = imp.get("response_protocol", {})
+        if proto:
+            print(f"\n  RESPONSE PROTOCOL ({dt.get('type', 'unknown').upper()}):")
+            print(f"    Priority:      {proto.get('search_rescue_priority', 'N/A')}")
+            print(f"    Primary hazard: {proto.get('primary_hazard', 'N/A')}")
+            print(f"    Survivor location: {proto.get('survivor_location', 'N/A')}")
+            print(f"    Time window:   {proto.get('time_critical_window', 'N/A')}")
+            equip = proto.get("equipment_needed", [])
+            if equip:
+                print(f"    Equipment:     {', '.join(equip[:5])}")
+
+        print(f"\n  OUTPUT FILES:")
         for k, v in report.get("output_files", {}).items():
             print(f"    {k:25s}: {v}")
-        print("=" * 60 + "\n")
+        print("=" * W + "\n")

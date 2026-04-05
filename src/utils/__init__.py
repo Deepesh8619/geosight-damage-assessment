@@ -12,3 +12,5 @@ from .viz_utils import (
     plot_class_distribution,
     create_leaflet_map,
 )
+from .impact_analysis import HumanitarianImpactAnalyzer, ImpactReport, generate_priority_zones
+from .spatial_analysis import SpatialDamageAnalyzer
