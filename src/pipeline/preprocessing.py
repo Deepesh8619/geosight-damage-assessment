@@ -53,7 +53,7 @@ def build_augmentation_pipeline(
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05, p=0.4),
             A.RandomBrightnessContrast(brightness_limit=0.15, contrast_limit=0.15, p=0.3),
             A.GaussianBlur(blur_limit=3, p=0.2),
-            A.GaussNoise(var_limit=(5, 30), p=0.2),
+            A.GaussNoise(std_range=(0.02, 0.1), p=0.2),
         ]
         transforms = spatial + color
     else:

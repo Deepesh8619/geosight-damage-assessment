@@ -99,7 +99,11 @@ def main():
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     device = torch.device(
-        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+        args.device or (
+            "cuda" if torch.cuda.is_available()
+            else "mps" if torch.backends.mps.is_available()
+            else "cpu"
+        )
     )
     logger.info(f"Device: {device}")
 
@@ -121,30 +125,17 @@ def main():
         generator=torch.Generator().manual_seed(42)
     )
 
-    # Apply val transform to val split
-    class WrapTransform(torch.utils.data.Dataset):
-        def __init__(self, subset, transform):
-            self.subset    = subset
-            self.transform = transform
-        def __len__(self):  return len(self.subset)
-        def __getitem__(self, i):
-            item = self.subset.dataset.samples[self.subset.indices[i]]
-            # Re-load raw item (without train augmentation)
-            raw = XBDDataset.__new__(XBDDataset)
-            raw.samples = self.subset.dataset.samples
-            raw.transform = None
-            raw.channels  = self.subset.dataset.channels
-            sample = self.subset.dataset[self.subset.indices[i]]
-            # Just apply val transform directly
-            return self.transform(sample)
+    # On macOS with MPS, num_workers > 0 can cause issues with forked processes
+    use_workers = 0 if device.type == "mps" else args.num_workers
+    pin = device.type == "cuda"
 
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size,
-        shuffle=True, num_workers=args.num_workers, pin_memory=True
+        shuffle=True, num_workers=use_workers, pin_memory=pin
     )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch_size,
-        shuffle=False, num_workers=args.num_workers, pin_memory=True
+        shuffle=False, num_workers=use_workers, pin_memory=pin
     )
 
     logger.info(f"Train: {len(train_ds)} | Val: {len(val_ds)}")

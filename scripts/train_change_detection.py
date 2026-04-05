@@ -123,7 +123,11 @@ def main():
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     device = torch.device(
-        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+        args.device or (
+            "cuda" if torch.cuda.is_available()
+            else "mps" if torch.backends.mps.is_available()
+            else "cpu"
+        )
     )
     logger.info(f"Device: {device}")
 
@@ -145,13 +149,16 @@ def main():
         generator=torch.Generator().manual_seed(42)
     )
 
+    use_workers = 0 if device.type == "mps" else args.num_workers
+    pin = device.type == "cuda"
+
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size,
-        shuffle=True,  num_workers=args.num_workers, pin_memory=True
+        shuffle=True,  num_workers=use_workers, pin_memory=pin
     )
     val_loader = DataLoader(
         val_ds,   batch_size=args.batch_size,
-        shuffle=False, num_workers=args.num_workers, pin_memory=True
+        shuffle=False, num_workers=use_workers, pin_memory=pin
     )
     logger.info(f"Train: {len(train_ds)} | Val: {len(val_ds)}")
 

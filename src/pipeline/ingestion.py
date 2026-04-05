@@ -146,10 +146,25 @@ class XBDDataset(Dataset):
             return json.load(f)
 
     @staticmethod
+    def _parse_wkt_to_shapely(wkt_string: str):
+        """Parse WKT polygon string to shapely geometry."""
+        from shapely import wkt
+        try:
+            return wkt.loads(wkt_string)
+        except Exception:
+            return None
+
+    @staticmethod
     def _rasterize_buildings(label_data: Dict, height: int, width: int) -> np.ndarray:
-        """Create binary building footprint mask from pre-disaster label."""
+        """
+        Create binary building footprint mask from pre-disaster label.
+
+        xBD labels use WKT format with pixel coordinates:
+          {"properties": {"feature_type": "building"}, "wkt": "POLYGON ((...))"}
+        """
         from rasterio.features import rasterize as rio_rasterize
         from affine import Affine
+        from shapely import wkt as shapely_wkt
 
         mask = np.zeros((height, width), dtype=np.uint8)
         features = label_data.get("features", {}).get("xy", [])
@@ -157,20 +172,21 @@ class XBDDataset(Dataset):
         if not features:
             return mask
 
-        geotransform = label_data.get("metadata", {}).get("geotransform", None)
-        if geotransform:
-            transform = Affine(
-                geotransform[1], geotransform[2], geotransform[0],
-                geotransform[4], geotransform[5], geotransform[3]
-            )
-        else:
-            transform = Affine(1, 0, 0, 0, 1, 0)
+        # xBD uses pixel coordinates — identity transform
+        transform = Affine(1, 0, 0, 0, 1, 0)
 
-        shapes = [
-            (feat["geometry"], 1)
-            for feat in features
-            if feat.get("geometry") is not None
-        ]
+        shapes = []
+        for feat in features:
+            # Handle both WKT format (real xBD) and GeoJSON format (synthetic)
+            wkt_str = feat.get("wkt")
+            if wkt_str:
+                geom = XBDDataset._parse_wkt_to_shapely(wkt_str)
+                if geom is not None and not geom.is_empty:
+                    shapes.append((geom, 1))
+            elif feat.get("geometry") is not None:
+                geom = shape(feat["geometry"])
+                if not geom.is_empty:
+                    shapes.append((geom, 1))
 
         if shapes:
             mask = rio_rasterize(
@@ -185,9 +201,15 @@ class XBDDataset(Dataset):
 
     @staticmethod
     def _rasterize_damage(label_data: Dict, height: int, width: int) -> np.ndarray:
-        """Create multi-class damage mask from post-disaster label."""
+        """
+        Create multi-class damage mask from post-disaster label.
+
+        xBD post-disaster labels have:
+          {"properties": {"subtype": "destroyed"}, "wkt": "POLYGON ((...))"}
+        """
         from rasterio.features import rasterize as rio_rasterize
         from affine import Affine
+        from shapely import wkt as shapely_wkt
 
         mask = np.zeros((height, width), dtype=np.uint8)
         features = label_data.get("features", {}).get("xy", [])
@@ -195,22 +217,26 @@ class XBDDataset(Dataset):
         if not features:
             return mask
 
-        geotransform = label_data.get("metadata", {}).get("geotransform", None)
         transform = Affine(1, 0, 0, 0, 1, 0)
-        if geotransform:
-            transform = Affine(
-                geotransform[1], geotransform[2], geotransform[0],
-                geotransform[4], geotransform[5], geotransform[3]
-            )
 
         # Rasterize from least severe to most severe so severe overwrites
         for class_label, class_idx in sorted(XBD_LABEL_MAP.items(), key=lambda x: x[1]):
-            shapes = [
-                (feat["geometry"], class_idx)
-                for feat in features
-                if feat.get("properties", {}).get("subtype", "").lower() == class_label
-                and feat.get("geometry") is not None
-            ]
+            shapes = []
+            for feat in features:
+                subtype = feat.get("properties", {}).get("subtype", "").lower()
+                if subtype != class_label:
+                    continue
+
+                wkt_str = feat.get("wkt")
+                if wkt_str:
+                    geom = XBDDataset._parse_wkt_to_shapely(wkt_str)
+                    if geom is not None and not geom.is_empty:
+                        shapes.append((geom, class_idx))
+                elif feat.get("geometry") is not None:
+                    geom = shape(feat["geometry"])
+                    if not geom.is_empty:
+                        shapes.append((geom, class_idx))
+
             if shapes:
                 class_mask = rio_rasterize(
                     shapes,
