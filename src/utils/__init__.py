@@ -14,3 +14,10 @@ from .viz_utils import (
 )
 from .impact_analysis import HumanitarianImpactAnalyzer, ImpactReport, generate_priority_zones
 from .spatial_analysis import SpatialDamageAnalyzer
+from .ml_analysis import (
+    XGBoostDisasterClassifier,
+    DBSCANHotspotDetector,
+    SpectralPCA,
+    KMeansLandCover,
+    MCDropoutEstimator,
+)
