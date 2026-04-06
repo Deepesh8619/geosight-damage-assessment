@@ -68,7 +68,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, metrics):
         optimizer.step()
 
         total_loss += loss.item()
-        metrics.update(logits, bld_mask)
+        metrics.update(logits.detach().cpu(), bld_mask.detach().cpu())
 
     return total_loss / len(loader)
 
@@ -89,7 +89,7 @@ def validate(model, loader, criterion, device, metrics):
         loss   = criterion(logits, bld_mask)
 
         total_loss += loss.item()
-        metrics.update(logits, bld_mask)
+        metrics.update(logits.detach().cpu(), bld_mask.detach().cpu())
 
     return total_loss / len(loader)
 
@@ -182,14 +182,16 @@ def main():
         train_met_log.append(t_met)
         val_met_log.append(v_met)
 
-        # Save best checkpoint
+        # Save best checkpoint (move to CPU to avoid MPS save issues)
         if v_met["iou"] > best_val_iou:
             best_val_iou = v_met["iou"]
             ckpt_path = str(Path(args.output_dir) / "best.pth")
+            cpu_state = {k: v.cpu() for k, v in model.state_dict().items()}
+            opt_state = optimizer.state_dict()
             torch.save({
                 "epoch":            epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
+                "model_state_dict": cpu_state,
+                "optimizer_state_dict": opt_state,
                 "val_iou":          best_val_iou,
                 "args":             vars(args),
             }, ckpt_path)
@@ -198,7 +200,8 @@ def main():
         # Periodic checkpoint
         if epoch % 10 == 0:
             periodic = str(Path(args.output_dir) / f"epoch_{epoch:03d}.pth")
-            torch.save({"epoch": epoch, "model_state_dict": model.state_dict()}, periodic)
+            cpu_state_p = {k: v.cpu() for k, v in model.state_dict().items()}
+            torch.save({"epoch": epoch, "model_state_dict": cpu_state_p}, periodic)
 
     # Save training curves
     plot_training_curves(

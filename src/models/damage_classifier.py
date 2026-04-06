@@ -50,7 +50,11 @@ class DamageAssessmentPipeline:
         use_siamese: bool = True,
     ):
         self.device = torch.device(
-            device or ("cuda" if torch.cuda.is_available() else "cpu")
+            device or (
+                "cuda" if torch.cuda.is_available()
+                else "mps" if torch.backends.mps.is_available()
+                else "cpu"
+            )
         )
         self.seg_threshold = seg_threshold
         self.use_siamese = use_siamese
@@ -228,6 +232,10 @@ class DamageAssessmentPipeline:
             HumanitarianImpactAnalyzer,
             generate_priority_zones,
         )
+        from ..utils.ml_analysis import (
+            DBSCANHotspotDetector,
+            KMeansLandCover,
+        )
 
         h, w = pre_image.shape[:2]
         tiler = RasterTiler(tile_size=tile_size, overlap=overlap)
@@ -274,6 +282,23 @@ class DamageAssessmentPipeline:
             damage_map, building_mask, confidence_map
         )
 
+        # ---- DBSCAN hotspot detection (unsupervised) ----
+        try:
+            dbscan = DBSCANHotspotDetector(eps=50.0, min_samples=5)
+            hotspots = dbscan.detect_hotspots(damage_map, building_mask)
+        except Exception:
+            hotspots = {"n_clusters": 0, "clusters": []}
+
+        # ---- K-Means land cover (unsupervised) ----
+        try:
+            kmeans = KMeansLandCover(n_clusters=5)
+            land_cover_map, land_cover_info = kmeans.segment(
+                pre_image.astype(np.float32) / 255.0 if pre_image.max() > 1 else pre_image
+            )
+        except Exception:
+            land_cover_map = np.zeros((h, w), dtype=np.int32)
+            land_cover_info = {"n_clusters": 0, "clusters": []}
+
         # ---- Basic stats ----
         stats = self._compute_stats(damage_map, building_prob_map)
 
@@ -286,9 +311,12 @@ class DamageAssessmentPipeline:
             "confidence_map":    confidence_map,
             "damage_rgb":        damage_rgb,
             "priority_map":      priority_map,
+            "land_cover_map":    land_cover_map,
             "disaster_type":     disaster_pred,
             "spatial_analysis":  spatial_report,
             "impact_report":     impact_report.to_dict(),
+            "dbscan_hotspots":   hotspots,
+            "land_cover":        land_cover_info,
             "stats":             stats,
         }
 

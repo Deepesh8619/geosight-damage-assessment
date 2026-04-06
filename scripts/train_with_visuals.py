@@ -275,7 +275,8 @@ def train_segmentation_epoch(model, loader, optimizer, criterion, device, metric
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
         total_loss += loss.item()
-        metrics.update(logits, bld_mask)
+        # Move to CPU for metrics to avoid MPS allocation issues
+        metrics.update(logits.detach().cpu(), bld_mask.detach().cpu())
     return total_loss / len(loader)
 
 
@@ -292,7 +293,7 @@ def validate_segmentation(model, loader, criterion, device, metrics):
         logits = model(pre_img)
         loss   = criterion(logits, bld_mask)
         total_loss += loss.item()
-        metrics.update(logits, bld_mask)
+        metrics.update(logits.detach().cpu(), bld_mask.detach().cpu())
     return total_loss / len(loader)
 
 
@@ -319,7 +320,7 @@ def train_damage_epoch(model, seg_model, loader, optimizer, criterion, device, m
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
         total_loss += loss.item()
-        metrics.update(logits, dmg_mask)
+        metrics.update(logits.detach().cpu(), dmg_mask.detach().cpu())
     return total_loss / len(loader)
 
 
@@ -342,7 +343,7 @@ def validate_damage(model, seg_model, loader, criterion, device, metrics):
         logits = model(pair)
         loss   = criterion(logits, dmg_mask)
         total_loss += loss.item()
-        metrics.update(logits, dmg_mask)
+        metrics.update(logits.detach().cpu(), dmg_mask.detach().cpu())
     return total_loss / len(loader)
 
 
@@ -471,16 +472,20 @@ def main():
 
             # Save visual previews every N epochs
             if epoch % args.save_every == 0 or epoch == 1:
-                save_segmentation_preview(
-                    seg_model, val_ds, device, epoch, str(seg_vis_dir),
-                )
+                try:
+                    save_segmentation_preview(
+                        seg_model, val_ds, device, epoch, str(seg_vis_dir),
+                    )
+                except Exception as e:
+                    logger.warning(f"  Preview failed (non-fatal): {e}")
 
-            # Save best checkpoint
+            # Save best checkpoint (move to CPU to avoid MPS save issues)
             if v_met["iou"] > best_iou:
                 best_iou = v_met["iou"]
+                cpu_state = {k: v.cpu() for k, v in seg_model.state_dict().items()}
                 torch.save({
                     "epoch": epoch,
-                    "model_state_dict": seg_model.state_dict(),
+                    "model_state_dict": cpu_state,
                     "val_iou": best_iou,
                 }, "checkpoints/segmentation/best.pth")
                 logger.info(f"  *** Best IoU: {best_iou:.4f} → saved checkpoint")
@@ -554,17 +559,21 @@ def main():
             )
 
             if epoch % args.save_every == 0 or epoch == 1:
-                save_damage_preview(
-                    seg_model_frozen or BuildingSegmentationModel().to(device),
-                    dmg_model, val_ds, device, epoch, str(dmg_vis_dir),
-                )
+                try:
+                    save_damage_preview(
+                        seg_model_frozen or BuildingSegmentationModel().to(device),
+                        dmg_model, val_ds, device, epoch, str(dmg_vis_dir),
+                    )
+                except Exception as e:
+                    logger.warning(f"  Preview failed (non-fatal): {e}")
 
             score = v_met.get("xview2_score", 0)
             if score > best_score:
                 best_score = score
+                cpu_state = {k: v.cpu() for k, v in dmg_model.state_dict().items()}
                 torch.save({
                     "epoch": epoch,
-                    "model_state_dict": dmg_model.state_dict(),
+                    "model_state_dict": cpu_state,
                     "xview2_score": best_score,
                 }, "checkpoints/damage/best.pth")
                 logger.info(f"  *** Best xView2: {best_score:.4f} → saved checkpoint")

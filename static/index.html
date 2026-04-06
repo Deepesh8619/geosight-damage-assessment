@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoSight - Damage Assessment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 24px 40px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .header h1 { font-size: 24px; color: #00d4ff; }
+        .header p { color: #888; margin-top: 4px; font-size: 14px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 32px 40px; }
+
+        .upload-zone {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+        .upload-box {
+            border: 2px dashed #333;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #111118;
+        }
+        .upload-box:hover { border-color: #00d4ff; background: #12121f; }
+        .upload-box.has-file { border-color: #00c853; border-style: solid; }
+        .upload-box h3 { color: #00d4ff; margin-bottom: 8px; }
+        .upload-box p { color: #666; font-size: 13px; }
+        .upload-box .filename { color: #00c853; font-size: 14px; margin-top: 8px; }
+        .upload-box input { display: none; }
+        .upload-box .preview {
+            max-width: 100%;
+            max-height: 200px;
+            margin-top: 12px;
+            border-radius: 8px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #00d4ff, #0088cc);
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn.loading { background: #333; }
+
+        .progress {
+            margin-top: 16px;
+            display: none;
+            text-align: center;
+        }
+        .progress.active { display: block; }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid #333;
+            border-top: 3px solid #00d4ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .results { display: none; margin-top: 32px; }
+        .results.active { display: block; }
+
+        .result-card {
+            background: #111118;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .result-card h3 {
+            color: #00d4ff;
+            margin-bottom: 16px;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .stat-item {
+            background: #0a0a12;
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 3px solid #00d4ff;
+        }
+        .stat-item .label { color: #888; font-size: 12px; text-transform: uppercase; }
+        .stat-item .value { color: #fff; font-size: 22px; font-weight: 700; margin-top: 4px; }
+        .stat-item .unit { color: #666; font-size: 13px; }
+
+        .severity-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .severity-low { background: #1b3a1b; color: #4caf50; }
+        .severity-moderate { background: #3a3a1b; color: #ffeb3b; }
+        .severity-severe { background: #3a2a1b; color: #ff9800; }
+        .severity-catastrophic { background: #3a1b1b; color: #f44336; }
+
+        .damage-bar {
+            display: flex;
+            height: 32px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+        .damage-bar div { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+        .bar-nodmg { background: #2e7d32; }
+        .bar-minor { background: #f9a825; color: #000; }
+        .bar-major { background: #ef6c00; }
+        .bar-destroyed { background: #c62828; }
+
+        .protocol-box {
+            background: #0a0a12;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+        .protocol-box .field { margin-bottom: 8px; }
+        .protocol-box .field-label { color: #888; font-size: 12px; }
+        .protocol-box .field-value { color: #e0e0e0; font-size: 14px; }
+
+        .error-msg {
+            background: #2d1111;
+            border: 1px solid #c62828;
+            color: #ef5350;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+            display: none;
+        }
+        .error-msg.active { display: block; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>GeoSight</h1>
+    <p>Satellite-Based Post-Disaster Building Damage Assessment</p>
+</div>
+
+<div class="container">
+    <div class="upload-zone">
+        <div class="upload-box" id="preBox" onclick="document.getElementById('preFile').click()">
+            <h3>Pre-Disaster Image</h3>
+            <p>Click to upload satellite image BEFORE the disaster</p>
+            <input type="file" id="preFile" accept="image/*,.tif,.tiff" onchange="handleFile(this, 'preBox')">
+        </div>
+        <div class="upload-box" id="postBox" onclick="document.getElementById('postFile').click()">
+            <h3>Post-Disaster Image</h3>
+            <p>Click to upload satellite image AFTER the disaster</p>
+            <input type="file" id="postFile" accept="image/*,.tif,.tiff" onchange="handleFile(this, 'postBox')">
+        </div>
+    </div>
+
+    <button class="btn" id="assessBtn" onclick="runAssessment()" disabled>
+        Run Damage Assessment
+    </button>
+
+    <div class="progress" id="progress">
+        <div class="spinner"></div>
+        <p>Analyzing satellite imagery... This may take 30-60 seconds.</p>
+    </div>
+
+    <div class="error-msg" id="error"></div>
+
+    <div class="results" id="results">
+        <!-- Filled by JavaScript -->
+    </div>
+</div>
+
+<script>
+let preFile = null, postFile = null;
+
+function handleFile(input, boxId) {
+    const file = input.files[0];
+    if (!file) return;
+    const box = document.getElementById(boxId);
+    box.classList.add('has-file');
+
+    let html = `<h3>${boxId === 'preBox' ? 'Pre' : 'Post'}-Disaster Image</h3>`;
+    html += `<div class="filename">${file.name} (${(file.size/1e6).toFixed(1)} MB)</div>`;
+
+    if (file.type.startsWith('image/') && !file.name.endsWith('.tif')) {
+        const url = URL.createObjectURL(file);
+        html += `<img class="preview" src="${url}">`;
+    }
+    box.innerHTML = html;
+
+    if (boxId === 'preBox') preFile = file;
+    else postFile = file;
+
+    document.getElementById('assessBtn').disabled = !(preFile && postFile);
+}
+
+async function runAssessment() {
+    if (!preFile || !postFile) return;
+
+    const btn = document.getElementById('assessBtn');
+    const progress = document.getElementById('progress');
+    const error = document.getElementById('error');
+    const results = document.getElementById('results');
+
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+    btn.classList.add('loading');
+    progress.classList.add('active');
+    error.classList.remove('active');
+    results.classList.remove('active');
+
+    const formData = new FormData();
+    formData.append('pre_image', preFile);
+    formData.append('post_image', postFile);
+
+    try {
+        const resp = await fetch('/assess/quick', { method: 'POST', body: formData });
+        if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
+        const data = await resp.json();
+        displayResults(data);
+    } catch (e) {
+        error.textContent = `Error: ${e.message}. Make sure the API server is running.`;
+        error.classList.add('active');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Damage Assessment';
+        btn.classList.remove('loading');
+        progress.classList.remove('active');
+    }
+}
+
+function displayResults(data) {
+    const r = document.getElementById('results');
+    const dt = data.disaster_type || {};
+    const imp = data.impact || {};
+    const pop = imp.population || {};
+    const eco = imp.economic || {};
+    const sev = imp.severity || {};
+    const shlt = imp.shelter || {};
+    const bld = imp.buildings || {};
+    const stats = data.stats || {};
+
+    const sevClass = `severity-${(sev.label || 'low').toLowerCase()}`;
+
+    const total = (bld.no_damage||0) + (bld.minor_damage||0) + (bld.major_damage||0) + (bld.destroyed||0);
+    const pct = (v) => total > 0 ? (v/total*100).toFixed(0) : 0;
+
+    const proto = imp.response_protocol || {};
+
+    r.innerHTML = `
+        <div class="result-card">
+            <h3>Assessment Summary</h3>
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <div class="label">Disaster Type</div>
+                    <div class="value">${(dt.type || 'Unknown').toUpperCase()}</div>
+                    <div class="unit">confidence: ${((dt.confidence||0)*100).toFixed(0)}%</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Severity</div>
+                    <div class="value"><span class="${sevClass} severity-badge">${(sev.label||'N/A').toUpperCase()}</span></div>
+                    <div class="unit">${(sev.index||0).toFixed(0)} / 100</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">People Displaced</div>
+                    <div class="value">${(pop.displaced||0).toLocaleString()}</div>
+                    <div class="unit">of ${(pop.affected||0).toLocaleString()} affected</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Economic Loss</div>
+                    <div class="value">$${((eco.loss_usd||0)/1e6).toFixed(1)}M</div>
+                    <div class="unit">reconstruction: $${((eco.reconstruction_usd||0)/1e6).toFixed(1)}M</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="result-card">
+            <h3>Building Damage (${total.toLocaleString()} buildings)</h3>
+            <div class="damage-bar">
+                <div class="bar-nodmg" style="width:${pct(bld.no_damage)}%">${pct(bld.no_damage)}%</div>
+                <div class="bar-minor" style="width:${pct(bld.minor_damage)}%">${pct(bld.minor_damage)}%</div>
+                <div class="bar-major" style="width:${pct(bld.major_damage)}%">${pct(bld.major_damage)}%</div>
+                <div class="bar-destroyed" style="width:${pct(bld.destroyed)}%">${pct(bld.destroyed)}%</div>
+            </div>
+            <div class="stat-grid" style="margin-top:16px">
+                <div class="stat-item" style="border-color:#4caf50">
+                    <div class="label">No Damage</div>
+                    <div class="value">${(bld.no_damage||0).toLocaleString()}</div>
+                </div>
+                <div class="stat-item" style="border-color:#f9a825">
+                    <div class="label">Minor Damage</div>
+                    <div class="value">${(bld.minor_damage||0).toLocaleString()}</div>
+                </div>
+                <div class="stat-item" style="border-color:#ef6c00">
+                    <div class="label">Major Damage</div>
+                    <div class="value">${(bld.major_damage||0).toLocaleString()}</div>
+                </div>
+                <div class="stat-item" style="border-color:#c62828">
+                    <div class="label">Destroyed</div>
+                    <div class="value">${(bld.destroyed||0).toLocaleString()}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="result-card">
+            <h3>Shelter Needs</h3>
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <div class="label">Emergency Shelter</div>
+                    <div class="value">${(shlt.needed_m2||0).toLocaleString()}</div>
+                    <div class="unit">square meters</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Tents Required</div>
+                    <div class="value">${(shlt.tents_needed||0).toLocaleString()}</div>
+                    <div class="unit">UNHCR standard (16 m² each)</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Casualties (est.)</div>
+                    <div class="value">${(pop.casualties_low||0)} - ${(pop.casualties_high||0)}</div>
+                    <div class="unit">low - high estimate</div>
+                </div>
+            </div>
+        </div>
+
+        ${proto.primary_hazard ? `
+        <div class="result-card">
+            <h3>Response Protocol (${(dt.type||'').toUpperCase()})</h3>
+            <div class="protocol-box">
+                <div class="field"><span class="field-label">Priority: </span><span class="field-value">${proto.search_rescue_priority||'N/A'}</span></div>
+                <div class="field"><span class="field-label">Primary Hazard: </span><span class="field-value">${proto.primary_hazard||'N/A'}</span></div>
+                <div class="field"><span class="field-label">Survivor Location: </span><span class="field-value">${proto.survivor_location||'N/A'}</span></div>
+                <div class="field"><span class="field-label">Time Window: </span><span class="field-value">${proto.time_critical_window||'N/A'}</span></div>
+                <div class="field"><span class="field-label">Equipment: </span><span class="field-value">${(proto.equipment_needed||[]).join(', ')}</span></div>
+            </div>
+        </div>` : ''}
+
+        <div class="result-card">
+            <h3>Processing</h3>
+            <div class="stat-item">
+                <div class="label">Time</div>
+                <div class="value">${(data.processing_time_seconds||0).toFixed(1)}s</div>
+            </div>
+        </div>
+    `;
+
+    r.classList.add('active');
+}
+</script>
+
+</body>
+</html>

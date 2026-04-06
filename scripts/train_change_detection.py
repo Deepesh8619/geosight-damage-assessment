@@ -87,7 +87,7 @@ def train_one_epoch(
         optimizer.step()
 
         total_loss += loss.item()
-        metrics.update(logits, dmg_mask)
+        metrics.update(logits.detach().cpu(), dmg_mask.detach().cpu())
 
     return total_loss / len(loader)
 
@@ -113,7 +113,7 @@ def validate(model, seg_model, loader, criterion, device, metrics):
         loss       = criterion(logits, dmg_mask)
 
         total_loss += loss.item()
-        metrics.update(logits, dmg_mask)
+        metrics.update(logits.detach().cpu(), dmg_mask.detach().cpu())
 
     return total_loss / len(loader)
 
@@ -222,17 +222,19 @@ def main():
         if score > best_val_score:
             best_val_score = score
             ckpt_path = str(Path(args.output_dir) / "best.pth")
+            cpu_state = {k: v.cpu() for k, v in model.state_dict().items()}
             torch.save({
                 "epoch":            epoch,
-                "model_state_dict": model.state_dict(),
+                "model_state_dict": cpu_state,
                 "xview2_score":     best_val_score,
                 "args":             vars(args),
             }, ckpt_path)
             logger.info(f"  *** Saved best: xView2={best_val_score:.4f} → {ckpt_path}")
 
         if epoch % 10 == 0:
+            cpu_state = {k: v.cpu() for k, v in model.state_dict().items()}
             torch.save(
-                {"epoch": epoch, "model_state_dict": model.state_dict()},
+                {"epoch": epoch, "model_state_dict": cpu_state},
                 str(Path(args.output_dir) / f"epoch_{epoch:03d}.pth"),
             )
 

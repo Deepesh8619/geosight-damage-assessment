@@ -44,6 +44,8 @@ except ImportError:
 # App
 # ---------------------------------------------------------------------------
 
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(
     title="GeoSight API",
     description="Satellite-based post-disaster building damage assessment",
@@ -56,6 +58,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve the web UI
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Global pipeline (loaded once at startup)
 pipeline = None
@@ -92,6 +99,15 @@ def load_models():
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/")
+def serve_ui():
+    """Serve the web UI."""
+    html_path = Path(__file__).parent.parent / "static" / "index.html"
+    if html_path.exists():
+        return FileResponse(str(html_path))
+    return {"message": "GeoSight API. Docs at /docs"}
+
 
 @app.get("/health")
 def health():

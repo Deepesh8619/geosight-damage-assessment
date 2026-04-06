@@ -124,6 +124,8 @@ class GeoSightAssessor:
         disaster_type = result.get("disaster_type", {})
         spatial       = result.get("spatial_analysis", {})
         impact        = result.get("impact_report", {})
+        hotspots      = result.get("dbscan_hotspots", {})
+        land_cover    = result.get("land_cover", {})
 
         logger.info(f"  Assessment complete.")
         logger.info(f"  Disaster type: {disaster_type.get('type', 'unknown')} "
@@ -194,6 +196,8 @@ class GeoSightAssessor:
             "disaster_type":    disaster_type,
             "impact_report":    impact,
             "spatial_analysis": spatial,
+            "dbscan_hotspots":  hotspots,
+            "land_cover":       land_cover,
             "statistics":       stats,
             "output_files":     output_files,
         }
@@ -345,17 +349,35 @@ class GeoSightAssessor:
             n_clusters = len(spa.get("clusters", []))
             print(f"    Damage clusters:       {n_clusters}")
 
+        # DBSCAN hotspots
+        hs = report.get("dbscan_hotspots", {})
+        if hs.get("n_clusters", 0) > 0:
+            print(f"\n  DAMAGE HOTSPOTS (DBSCAN unsupervised clustering):")
+            print(f"    Clusters found:    {hs['n_clusters']}")
+            print(f"    Noise ratio:       {hs.get('noise_ratio', 0):.1%} (isolated damage = likely false positives)")
+            for c in hs.get("clusters", [])[:5]:
+                print(f"    Hotspot {c['id']}: center=({c['centroid'][0]},{c['centroid'][1]})  "
+                      f"size={c['n_points']} px  spread={c.get('spread_pixels', 0):.0f} px")
+
+        # Land cover
+        lc = report.get("land_cover", {})
+        if lc.get("clusters"):
+            print(f"\n  LAND COVER (K-Means unsupervised):")
+            for c in lc["clusters"]:
+                print(f"    Cluster {c['id']}: {c['coverage_pct']:.1f}% coverage  "
+                      f"brightness={c['brightness']:.2f}")
+
         # Response protocol
         proto = imp.get("response_protocol", {})
         if proto:
             print(f"\n  RESPONSE PROTOCOL ({dt.get('type', 'unknown').upper()}):")
-            print(f"    Priority:      {proto.get('search_rescue_priority', 'N/A')}")
+            print(f"    Priority:       {proto.get('search_rescue_priority', 'N/A')}")
             print(f"    Primary hazard: {proto.get('primary_hazard', 'N/A')}")
             print(f"    Survivor location: {proto.get('survivor_location', 'N/A')}")
-            print(f"    Time window:   {proto.get('time_critical_window', 'N/A')}")
+            print(f"    Time window:    {proto.get('time_critical_window', 'N/A')}")
             equip = proto.get("equipment_needed", [])
             if equip:
-                print(f"    Equipment:     {', '.join(equip[:5])}")
+                print(f"    Equipment:      {', '.join(equip[:5])}")
 
         print(f"\n  OUTPUT FILES:")
         for k, v in report.get("output_files", {}).items():

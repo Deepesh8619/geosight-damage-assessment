@@ -187,7 +187,8 @@ class SiameseUNet(nn.Module):
         fused_features = self.diff_module(pre_features, post_features)
 
         # Decode to damage map
-        decoder_output = self.decoder(*fused_features)
+        # smp's UnetDecoder.forward() expects a single list of feature tensors
+        decoder_output = self.decoder(fused_features)
         logits = self.segmentation_head(decoder_output)
 
         return logits

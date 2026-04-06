@@ -287,27 +287,25 @@ class DisasterTypeClassifier(nn.Module):
             confidence: float — probability of that type
             all_probs:  dict — probability for each disaster type
         """
+        self.eval()  # BatchNorm requires eval mode for batch_size=1
         with torch.no_grad():
             logits = self.forward(post_image, damage_probs)
             probs  = F.softmax(logits, dim=1)
 
-            # For each sample in batch
-            results = []
-            for b in range(probs.shape[0]):
-                p = probs[b]
-                top_idx   = p.argmax().item()
-                top_conf  = p[top_idx].item()
-                all_probs = {
-                    DISASTER_TYPES[i]: round(p[i].item(), 4)
-                    for i in range(NUM_DISASTER_TYPES)
-                }
-                results.append({
-                    "type":       DISASTER_TYPES[top_idx],
-                    "confidence": round(top_conf, 4),
-                    "all_probs":  all_probs,
-                })
+            # Average probabilities across batch (multiple tiles → single prediction)
+            avg_probs = probs.mean(dim=0)  # (num_classes,)
+            top_idx   = avg_probs.argmax().item()
+            top_conf  = avg_probs[top_idx].item()
+            all_probs = {
+                DISASTER_TYPES[i]: round(avg_probs[i].item(), 4)
+                for i in range(NUM_DISASTER_TYPES)
+            }
 
-            return results[0] if len(results) == 1 else results
+            return {
+                "type":       DISASTER_TYPES[top_idx],
+                "confidence": round(top_conf, 4),
+                "all_probs":  all_probs,
+            }
 
     @property
     def n_parameters(self) -> int:

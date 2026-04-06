@@ -158,10 +158,12 @@ class WeightedFocalLoss(nn.Module):
             logits:  (B, C, H, W)
             targets: (B, H, W) int64
         """
+        # Ensure class_weights are on the same device as logits
+        w = self.class_weights.to(logits.device) if self.class_weights is not None else None
         ce_loss = F.cross_entropy(
             logits,
             targets,
-            weight=self.class_weights,
+            weight=w,
             ignore_index=self.ignore_index,
             reduction="none",
         )
@@ -186,25 +188,20 @@ class CombinedDamageLoss(nn.Module):
         super().__init__()
         self.focal_weight  = focal_weight
         self.lovasz_weight = lovasz_weight
+        self._class_weights = class_weights
         self.focal = WeightedFocalLoss(class_weights=class_weights)
 
-        try:
-            from segmentation_models_pytorch.losses import LovaszLoss
-            self.lovasz = LovaszLoss(mode="multiclass")
-            self._use_lovasz = True
-        except ImportError:
-            logger.warning("LovaszLoss not available; using CrossEntropy instead.")
-            self.lovasz      = nn.CrossEntropyLoss(
-                weight=torch.tensor(class_weights) if class_weights else None
-            )
-            self._use_lovasz = False
+        # Skip LovaszLoss — it has MPS compatibility issues.
+        # Use weighted CrossEntropy instead (similar effect, more stable).
+        self._use_lovasz = False
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         loss = self.focal_weight * self.focal(logits, targets)
-        if self._use_lovasz:
-            loss += self.lovasz_weight * self.lovasz(logits, targets)
-        else:
-            loss += self.lovasz_weight * self.lovasz(logits, targets)
+        # Second loss: weighted cross-entropy (device-safe)
+        w = torch.tensor(self._class_weights, device=logits.device, dtype=torch.float32) \
+            if self._class_weights else None
+        ce = F.cross_entropy(logits, targets, weight=w)
+        loss += self.lovasz_weight * ce
         return loss
 
 
