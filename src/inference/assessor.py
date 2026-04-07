@@ -202,8 +202,23 @@ class GeoSightAssessor:
             "output_files":     output_files,
         }
         report_path = str(Path(output_dir) / f"{event_name}_report.json")
+
+        # Convert numpy types to native Python for JSON serialization
+        def _convert(obj):
+            if isinstance(obj, (np.integer,)):
+                return int(obj)
+            elif isinstance(obj, (np.floating,)):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: _convert(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [_convert(v) for v in obj]
+            return obj
+
         with open(report_path, "w") as f:
-            json.dump(report, f, indent=2)
+            json.dump(_convert(report), f, indent=2)
         output_files["report_json"] = report_path
 
         logger.info(f"Assessment complete. Report saved: {report_path}")
